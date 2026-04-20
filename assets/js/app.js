@@ -213,7 +213,13 @@ function bindMovieCards() {
     if (infoEl)  infoEl.innerHTML = '<div style="color:var(--color-text-muted);font-size:.85rem;margin-top:4px">⏳ Info betöltése...</div>';
 
     clearTimeout(vodInfoTimer);
-    if (!creds || !streamId) { if (infoEl) infoEl.innerHTML = ''; return; }
+
+    if (!creds || !streamId) {
+      if (infoEl) infoEl.innerHTML = streamId
+        ? '<div style="color:var(--color-text-muted);font-size:.82rem">Bejelentkezés szükséges a részletekhez.</div>'
+        : '<div style="color:var(--color-text-muted);font-size:.82rem">Nincs stream ID – részletek nem elérhetők.</div>';
+      return;
+    }
 
     vodInfoTimer = setTimeout(async () => {
       try {
@@ -244,21 +250,24 @@ function bindMovieCards() {
     }, 350);
   };
 
+  // Hover / focus → csak panel frissítés, NEM navigál
   document.querySelectorAll('[data-movie-key]:not(.fav-card)').forEach(card => {
     card.addEventListener('mouseenter', () => updatePanel(card));
     card.addEventListener('focus',      () => updatePanel(card));
-    card.addEventListener('click',      () => {
-      updatePanel(card);
-      setCurrentPlayerItem(card.dataset.movieKey);
-      navigateTo('player', { id: card.dataset.movieKey });
+    // Kattintás → panel aktív, de NEM navigál (a Lejátszás gomb navigál)
+    card.addEventListener('click', () => updatePanel(card));
+    card.addEventListener('keydown', e => {
+      if (e.key === 'Enter') updatePanel(card);
     });
   });
 
+  // A Lejátszás gomb navigál
   if (playBtn) {
     playBtn.addEventListener('click', () => {
-      if (playBtn.dataset.openPlayer) {
-        setCurrentPlayerItem(playBtn.dataset.openPlayer);
-        navigateTo('player', { id: playBtn.dataset.openPlayer });
+      const key = playBtn.dataset.openPlayer;
+      if (key) {
+        setCurrentPlayerItem(key);
+        navigateTo('player', { id: key });
       }
     });
   }

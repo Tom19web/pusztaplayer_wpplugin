@@ -1,6 +1,7 @@
 /**
  * PusztaPlay — Filmek View
  * FEAT: kategória panel + detail panel (EPG-box stílus) + get_vod_info alapján
+ * FIX: hover=panel betölt, kattintás=panel aktív (navigáció csak a Lejátszás gombbal)
  */
 
 import { getMovies }           from '../services/api.js';
@@ -29,6 +30,7 @@ function renderVodCard(item) {
     : 'background:linear-gradient(145deg,#1fd6e8,#ff5b63 55%,#1a1a1a)';
   return `
     <article class="card movie-item"
+      tabindex="0"
       data-movie-key="${item.key}"
       data-movie-stream-id="${item.streamId || ''}"
       data-movie-title="${item.title.replace(/"/g,'&quot;')}"
@@ -42,7 +44,6 @@ function renderVodCard(item) {
   `;
 }
 
-// JAVÍTÁS 1: Itt a "rail" le lett cserélve "channel-grid"-re, így több oszlopos lesz!
 export function renderMoviePage(items, offset = 0) {
   const page      = items.slice(offset, offset + PAGE_SIZE);
   const hasMore   = offset + PAGE_SIZE < items.length;
@@ -65,15 +66,14 @@ export async function renderMoviesView() {
     const movies      = imported.movies || [];
     const movieGroups = imported.movieGroups || ['Összes film'];
 
-    // Filmek tisztítása a memóriában (csak a cím)
     _allMovies = movies.map(c => {
       const cleanTitle = c.title.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}⭐★🎬🎥]/gu, '').trim();
       return {
-        key: c.key, 
-        streamId: c.streamId || '', 
-        title: cleanTitle,
-        group: c.group || 'Egyéb', 
-        logo: c.logo || '', 
+        key:       c.key,
+        streamId:  c.streamId || '',
+        title:     cleanTitle,
+        group:     c.group || 'Egyéb',
+        logo:      c.logo || '',
         streamUrl: c.streamUrl || ''
       };
     });
@@ -94,16 +94,12 @@ export async function renderMoviesView() {
           <span class="pill">${movies.length} film</span>
         </div>
 
-  <div class="category-filter-wrapper">
+        <div class="category-filter-wrapper">
           <div class="category-filter-bar" id="movies-groups-panel">
             ${movieGroups.map((g, i) => {
               const cleanGroupName = g.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}⭐★🎬🎥]/gu, '').trim();
-              const filterValue = (g === 'Összes film') ? '' : g.replace(/"/g,'&quot;');
-              
-              // FIGYELD: Nincs 'group-item', csak 'filter-pill' és a te 'data-movies-filter'-ed!
-              return `<button class="filter-pill ${i === 0 ? 'active' : ''}" 
-                        data-movies-filter="${filterValue}"
-                      >${cleanGroupName}</button>`;
+              const filterValue    = (g === 'Összes film') ? '' : g.replace(/"/g,'&quot;');
+              return `<button class="filter-pill ${i === 0 ? 'active' : ''}" data-movies-filter="${filterValue}">${cleanGroupName}</button>`;
             }).join('')}
           </div>
         </div>
@@ -112,7 +108,7 @@ export async function renderMoviesView() {
           <div class="panel channels" id="vod-movies-list">
             ${renderMoviePage(_allMovies, 0)}
           </div>
-          
+
           <div class="detail-card details live-epg-sticky" id="movie-detail-panel">
             <div class="now-playing-chip"><span class="dot-live"></span><span>Saját playlist aktív</span></div>
             <h4 id="movie-detail-title" style="margin-top:14px">${first?.title || ''}</h4>
@@ -120,7 +116,7 @@ export async function renderMoviesView() {
               <div><dt>Kategória</dt><dd id="movie-detail-group">${first?.group || ''}</dd></div>
             </dl>
             <div id="movie-detail-info" style="margin-top:8px">
-              <div class="epg-loading" style="color:var(--color-text-muted);font-size:.85rem">‹ Kattints egy filmre a részletekhez</div>
+              <div class="epg-loading" style="color:var(--color-text-muted);font-size:.85rem">‹ Vidd rá az egeret egy filmre a részletekhez</div>
             </div>
             <div style="margin-top:16px">
               <button class="btn btn-primary" id="movie-detail-play" data-open-player="${first?.key || ''}">▶ Lejátszás</button>
@@ -131,6 +127,7 @@ export async function renderMoviesView() {
         <div class="empty-state hidden" data-empty-search>Nincs találat a filmek között.</div>
       </section>`;
   }
+
   // Fallback: mock JSON
   const movies = await getMovies();
   return `
