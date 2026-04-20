@@ -1,6 +1,7 @@
 /**
  * PusztaPlay — Sorozatok View
  * FEAT: kategória panel + detail panel (EPG-box stílus) + get_series_info alapján
+ * FIX: filter-pill sáv + channel-grid layout (filmek mintájára)
  */
 
 import { getImportedPlaylist } from '../services/playlist-import.js';
@@ -20,6 +21,7 @@ function renderSeriesCard(item) {
     : 'background:linear-gradient(145deg,#f6c800,#ff5b63 55%,#1a1a1a)';
   return `
     <article class="card"
+      tabindex="0"
       data-open-series="${item.seriesId}"
       data-series-key="${item.key}"
       data-series-title="${item.title.replace(/"/g,'&quot;')}"
@@ -39,7 +41,7 @@ export function renderSeriesPage(items, offset = 0) {
   const hasMore   = offset + PAGE_SIZE < items.length;
   const remaining = items.length - offset - PAGE_SIZE;
   return `
-    <div class="rail" id="vod-series-rail">
+    <div class="channel-grid" id="vod-series-rail">
       ${page.map(item => renderSeriesCard(item)).join('')}
       ${hasMore
         ? `<button class="btn btn-secondary load-more-series-btn" data-series-offset="${offset + PAGE_SIZE}" style="grid-column:1/-1;margin-top:8px">⬇ Következő ${Math.min(remaining, PAGE_SIZE)} sorozat (${offset + PAGE_SIZE}/${items.length})</button>`
@@ -76,16 +78,22 @@ export async function renderSeriesView() {
         <span class="pill">${_allSeries.length} sorozatcím</span>
       </div>
 
+      <!-- Kategória szűrő sáv (filmek mintájára) -->
+      <div class="category-filter-wrapper">
+        <div class="category-filter-bar" id="series-groups-panel">
+          ${seriesGroups.map((g, i) => {
+            const cleanName  = g.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}⭐★🎬🎥]/gu, '').trim();
+            const filterVal  = (g === 'Összes sorozat') ? '' : g.replace(/"/g,'&quot;');
+            return `<button class="filter-pill ${i === 0 ? 'active' : ''}" data-series-filter="${filterVal}">${cleanName}</button>`;
+          }).join('')}
+        </div>
+      </div>
+
       <!-- Évad/epizód panel – dinamikusan töltődik -->
       <div id="series-episode-panel" class="detail-card" style="display:none;margin-bottom:20px"></div>
 
-      <div class="layout-live">
-        <div class="panel groups" id="series-groups-panel">
-          ${seriesGroups.map((g, i) =>
-            `<button class="group-item ${i === 0 ? 'active' : ''}" data-series-filter="${g.replace(/"/g,'&quot;')}">${g}</button>`
-          ).join('')}
-        </div>
-        <div id="vod-series-list">
+      <div class="layout-live-full">
+        <div class="panel channels" id="vod-series-list">
           ${renderSeriesPage(_allSeries, 0)}
         </div>
         <div class="detail-card details live-epg-sticky" id="series-detail-panel">
@@ -95,13 +103,16 @@ export async function renderSeriesView() {
             <div><dt>Kategória</dt><dd id="series-detail-group">${first?.group || ''}</dd></div>
           </dl>
           <div id="series-detail-info" style="margin-top:8px">
-            <div class="epg-loading" style="color:var(--color-text-muted);font-size:.85rem">‹ Kattints egy sorozatra a részletekhez</div>
+            <div class="epg-loading" style="color:var(--color-text-muted);font-size:.85rem">‹ Vidd rá az egeret egy sorozatra a részletekhez</div>
           </div>
           <div style="margin-top:16px">
-            <button class="btn btn-primary" id="series-detail-open" data-open-series="${first?.seriesId || ''}" data-series-title="${(first?.title||'').replace(/"/g,'&quot;')}">▶ Epizódok</button>
+            <button class="btn btn-primary" id="series-detail-open"
+              data-open-series="${first?.seriesId || ''}"
+              data-series-title="${(first?.title||'').replace(/"/g,'&quot;')}">▶ Epizódok</button>
           </div>
         </div>
       </div>
+
       <div class="empty-state hidden" data-empty-search>Nincs találat a sorozatok között.</div>
     </section>`;
 }
