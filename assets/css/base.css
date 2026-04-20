@@ -1,0 +1,70 @@
+/* --- CSS Karantén a PusztaPlayernek --- */
+
+/* Resetelés csak a mi dobozunkon belül */
+#pusztaplayer-root *,
+#pusztaplayer-root *::before,
+#pusztaplayer-root *::after {
+  box-sizing: border-box;
+}
+
+/* Ez veszi át az egykori 'body' szerepét */
+#pusztaplayer-root {
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  font-family: "Inter", system-ui, sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(
+      circle at 20% 20%,
+      rgba(31, 214, 232, 0.08),
+      transparent 22%
+    ),
+    radial-gradient(
+      circle at 80% 10%,
+      rgba(246, 200, 0, 0.08),
+      transparent 18%
+    ),
+    linear-gradient(rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.55)),
+    radial-gradient(circle, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  background-size:
+    auto,
+    auto,
+    auto,
+    14px 14px;
+  background-color: var(--bg);
+}
+
+/* Védőháló a gombokra és linkekre */
+#pusztaplayer-root button,
+#pusztaplayer-root input {
+  font: inherit;
+}
+
+#pusztaplayer-root button {
+  cursor: pointer;
+}
+
+#pusztaplayer-root a {
+  text-decoration: none;
+  color: inherit;
+}
+
+#pusztaplayer-root .hidden {
+  display: none !important;
+}
+/* --- BANGERS BETŰTÍPUS A CÍMSOROKNAK --- */
+#pusztaplayer-root h1,
+#pusztaplayer-root h2,
+#pusztaplayer-root h3,
+#pusztaplayer-root h4,
+#pusztaplayer-root h5,
+#pusztaplayer-root h6,
+#pusztaplayer-root .card-title,
+#pusztaplayer-root .section-title,
+#pusztaplayer-root .episode-title,
+#pusztaplayer-root .modal-title {
+  font-family: "Bangers", system-ui, cursive;
+  font-weight: normal; /* A Bangers alapból vastag, így a legszebb */
+  letter-spacing: 1px; /* Egy icipici térköz jót tesz a Bangers betűknek */
+}
