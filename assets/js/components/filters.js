@@ -1,6 +1,9 @@
 /**
  * filters.js
  * Csoport/kategória szűrés + Load More kezelés (Live, Film, Sorozat).
+ *
+ * FIX: az "Összes" gombok data-*-filter értéke üres string ("") —
+ *      a szűrés feltétele tehát: !filter (nem string-összehasonlítás).
  */
 
 import { getAllLiveChannels }                          from '../views/live.js';
@@ -28,7 +31,8 @@ export function bindGroupFilter(bindLiveInteractions, bindRouteEvents, bindFavor
       btn.classList.add('active');
 
       const filter   = btn.dataset.groupFilter;
-      const filtered = filter === 'Összes csatorna'
+      // FIX: üres string = Összes csatorna
+      const filtered = !filter
         ? masterChannels
         : masterChannels.filter(ch => ch.group === filter);
 
@@ -54,7 +58,8 @@ export function bindMoviesFilter(bindMovieCards, bindRouteEvents, bindFavoriteBu
       btn.classList.add('active');
 
       const filter   = btn.dataset.moviesFilter;
-      const filtered = filter === 'Összes film'
+      // FIX: üres string = Összes film
+      const filtered = !filter
         ? master
         : master.filter(m => m.group === filter);
 
@@ -80,7 +85,8 @@ export function bindSeriesFilter(bindSeriesDetailPanel, bindSeriesCards, bindRou
       btn.classList.add('active');
 
       const filter   = btn.dataset.seriesFilter;
-      const filtered = filter === 'Összes sorozat'
+      // FIX: üres string = Összes sorozat
+      const filtered = !filter
         ? master
         : master.filter(s => s.group === filter);
 
@@ -146,9 +152,9 @@ export function bindMoviesLoadMore(bindMovieCards, bindRouteEvents, bindFavorite
     const page    = source.slice(offset, offset + PAGE);
     const hasMore = offset + PAGE < source.length;
     const rem     = source.length - offset - PAGE;
-    const rail    = listEl.querySelector('#vod-movies-rail') || listEl;
+    const grid    = listEl.querySelector('.channel-grid') || listEl;
 
-    rail.insertAdjacentHTML('beforeend', page.map(c => renderMovieCardHTML(c)).join(''));
+    grid.insertAdjacentHTML('beforeend', page.map(c => renderMovieCardHTML(c)).join(''));
     btn.remove();
 
     if (hasMore) {
@@ -179,9 +185,9 @@ export function bindSeriesLoadMore(bindSeriesDetailPanel, bindSeriesCards, bindR
     const page    = source.slice(offset, offset + PAGE);
     const hasMore = offset + PAGE < source.length;
     const rem     = source.length - offset - PAGE;
-    const rail    = listEl.querySelector('#vod-series-rail') || listEl;
+    const grid    = listEl.querySelector('.channel-grid') || listEl;
 
-    rail.insertAdjacentHTML('beforeend', page.map(c => renderSeriesCardHTML(c)).join(''));
+    grid.insertAdjacentHTML('beforeend', page.map(c => renderSeriesCardHTML(c)).join(''));
     btn.remove();
 
     if (hasMore) {
