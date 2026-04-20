@@ -1,89 +1,141 @@
 /**
  * PusztaPlay — Filmek View
- * FEAT: kategória panel + detail panel (EPG-box stílus) + get_vod_info lazy loading
- * FEAT: Pagination (30 film/oldal)
+ * FEAT: kategória panel + detail panel (EPG-box stílus) + get_vod_info alapján
+ * FIX: hover=panel betölt, kattintás=panel aktív (navigáció csak a Lejátszás gombbal)
  */
 
-import { isFavorite }  from '../store/actions.js';
+import { getMovies }           from '../services/api.js';
+import { renderPosterCard }    from '../components/poster-card.js';
+import { renderSkeletonGrid }  from '../components/skeleton.js';
+import { getImportedPlaylist } from '../services/playlist-import.js';
 
-const PAGE_SIZE = 30;
-let _allMovies  = [];
+const PAGE_SIZE = 100;
 
-export function setAllMovies(movies)  { _allMovies = movies; }
-export function getAllMovies()         { return _allMovies; }
+let _allMovies = [];
+export function getAllMovies() { return _allMovies; }
 
-/* ── VOD kártya ───────────────────────────────────────────────────── */
+const styleMap = {
+  royal: '', heist: 'background:linear-gradient(145deg,#1fd6e8,#1969a7 55%,#120f3d)',
+  arena: 'background:linear-gradient(145deg,#f6c800,#ff6a00 55%,#bd1128)',
+  retro: 'background:linear-gradient(145deg,#e44652,#f6c800 45%,#1fd6e8)'
+};
+
+export function renderMoviesLoadingView() {
+  return `<section class="content-grid"><div class="status-banner"><strong>Betöltés...</strong> jönnek a filmek.</div>${renderSkeletonGrid(4)}</section>`;
+}
+
 function renderVodCard(item) {
-  const bg  = item.logo
+  const bg = item.logo
     ? `background:url('${item.logo}') center/cover no-repeat`
     : 'background:linear-gradient(145deg,#1fd6e8,#ff5b63 55%,#1a1a1a)';
-  const fav = isFavorite(item.key);
-  return `<article class="card"
-    data-movie-key="${item.key}"
-    data-movie-stream-id="${item.streamId || ''}"
-    data-movie-title="${item.title.replace(/"/g, '&quot;')}"
-    data-movie-group="${(item.group || '').replace(/"/g, '&quot;')}"
-    data-movie-logo="${(item.logo || '').replace(/"/g, '&quot;')}">
-    <div class="thumb" style="${bg}">
-      ${!item.logo ? `<span>${item.title.replace(/ /g, '<br>')}</span>` : ''}
-      <button class="fav-heart${fav ? ' fav-heart--active' : ''}" data-fav-toggle="${item.key}"
-        title="${fav ? 'Eltávolítás a kedvencekből' : 'Hozzáadás a kedvencekhez'}"
-        aria-label="${fav ? 'Eltávolítás a kedvencekből' : 'Hozzáadás a kedvencekhez'}"
-        aria-pressed="${fav}">${fav ? '♥' : '♡'}</button>
-    </div>
-    <div class="meta"><strong>${item.title}</strong><small>${item.group || ''}</small></div>
-  </article>`;
+  return `
+    <article class="card movie-item"
+      tabindex="0"
+      data-movie-key="${item.key}"
+      data-movie-stream-id="${item.streamId || ''}"
+      data-movie-title="${item.title.replace(/"/g,'&quot;')}"
+      data-movie-group="${(item.group||'').replace(/"/g,'&quot;')}"
+      data-movie-logo="${(item.logo||'').replace(/"/g,'&quot;')}">
+      <div class="thumb" style="${bg}">
+        ${!item.logo ? `<span>${item.title.replace(/ /g,'<br>')}</span>` : ''}
+      </div>
+      <div class="meta"><strong>${item.title}</strong><small>${item.group || ''}</small></div>
+    </article>
+  `;
 }
 
-/* ── Pagination helper ────────────────────────────────────────────── */
-function renderPaginationBar(current, total, itemCount, type) {
-  if (total <= 1) return `<div class="pagination-info">Összes film: ${itemCount} db</div>`;
-  const pages = [];
-  for (let i = 0; i < total; i++) {
-    if (i === 0 || i === total - 1 || Math.abs(i - current) <= 2) {
-      pages.push(i);
-    } else if (pages[pages.length - 1] !== '...') {
-      pages.push('...');
-    }
-  }
-  return `<div class="pagination-bar" data-pagination-type="${type}" data-total="${itemCount}">
-    <button class="pag-btn pag-prev" data-pag-offset="${(current - 1) * PAGE_SIZE}" ${current === 0 ? 'disabled' : ''}>&lsaquo; Előző</button>
-    <div class="pag-pages">${pages.map(p => p === '...'
-      ? `<span class="pag-ellipsis">…</span>`
-      : `<button class="pag-btn pag-num${p === current ? ' active' : ''}" data-pag-offset="${p * PAGE_SIZE}">${p + 1}</button>`
-    ).join('')}</div>
-    <button class="pag-btn pag-next" data-pag-offset="${(current + 1) * PAGE_SIZE}" ${current === total - 1 ? 'disabled' : ''}>Következő &rsaquo;</button>
-  </div>`;
-}
-
-/* ── Oldal renderelése ────────────────────────────────────────────── */
 export function renderMoviePage(items, offset = 0) {
-  const page        = items.slice(offset, offset + PAGE_SIZE);
-  const totalPages  = Math.ceil(items.length / PAGE_SIZE);
-  const currentPage = Math.floor(offset / PAGE_SIZE);
+  const page      = items.slice(offset, offset + PAGE_SIZE);
+  const hasMore   = offset + PAGE_SIZE < items.length;
+  const remaining = items.length - offset - PAGE_SIZE;
   return `
     <div class="channel-grid">
       ${page.map(item => renderVodCard(item)).join('')}
+      ${hasMore
+        ? `<button class="btn btn-secondary load-more-movies-btn" data-movies-offset="${offset + PAGE_SIZE}" style="grid-column:1/-1;margin-top:8px">⬇ Következő ${Math.min(remaining, PAGE_SIZE)} film (${offset + PAGE_SIZE}/${items.length})</button>`
+        : `<div class="muted" style="grid-column:1/-1;padding:12px 0;font-size:.85rem;text-align:center">Összes film megjelenítve (${items.length} db)</div>`
+      }
     </div>
-    ${renderPaginationBar(currentPage, totalPages, items.length, 'movies')}
   `;
 }
 
-/* ── Főnézet ─────────────────────────────────────────────────────── */
-export function renderMoviesView(movies) {
-  setAllMovies(movies);
+export async function renderMoviesView() {
+  const imported = getImportedPlaylist();
 
-  const groups = ['', ...new Set(movies.map(m => m.group).filter(Boolean))];
-  const groupBtns = groups.map(g =>
-    `<button class="filter-pill${!g ? ' active' : ''}" data-movies-filter="${g}">${g || 'Összes'}</button>`
-  ).join('');
+  if (imported) {
+    const movies      = imported.movies || [];
+    const movieGroups = imported.movieGroups || ['Összes film'];
 
+    _allMovies = movies.map(c => {
+      const cleanTitle = c.title.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}⭐★🎬🎥]/gu, '').trim();
+      return {
+        key:       c.key,
+        streamId:  c.streamId || '',
+        title:     cleanTitle,
+        group:     c.group || 'Egyéb',
+        logo:      c.logo || '',
+        streamUrl: c.streamUrl || ''
+      };
+    });
+
+    if (!movies.length) {
+      return `
+        <section class="content-grid" data-search-scope="movies">
+          <div class="section-head"><div class="headline">Filmek</div></div>
+          <div class="status-banner">Az importált playlistben nem találtunk filmet.</div>
+        </section>`;
+    }
+
+    const first = _allMovies[0];
+    return `
+      <section class="content-grid" data-search-scope="movies">
+        <div class="section-head">
+          <div class="headline">Filmek</div>
+          <span class="pill">${movies.length} film</span>
+        </div>
+
+        <div class="category-filter-wrapper">
+          <div class="category-filter-bar" id="movies-groups-panel">
+            ${movieGroups.map((g, i) => {
+              const cleanGroupName = g.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}⭐★🎬🎥]/gu, '').trim();
+              const filterValue    = (g === 'Összes film') ? '' : g.replace(/"/g,'&quot;');
+              return `<button class="filter-pill ${i === 0 ? 'active' : ''}" data-movies-filter="${filterValue}">${cleanGroupName}</button>`;
+            }).join('')}
+          </div>
+        </div>
+
+        <div class="layout-live-full">
+          <div class="panel channels" id="vod-movies-list">
+            ${renderMoviePage(_allMovies, 0)}
+          </div>
+
+          <div class="detail-card details live-epg-sticky" id="movie-detail-panel">
+            <div class="now-playing-chip"><span class="dot-live"></span><span>Saját playlist aktív</span></div>
+            <h4 id="movie-detail-title" style="margin-top:14px">${first?.title || ''}</h4>
+            <dl id="movie-detail-dl">
+              <div><dt>Kategória</dt><dd id="movie-detail-group">${first?.group || ''}</dd></div>
+            </dl>
+            <div id="movie-detail-info" style="margin-top:8px">
+              <div class="epg-loading" style="color:var(--color-text-muted);font-size:.85rem">‹ Vidd rá az egeret egy filmre a részletekhez</div>
+            </div>
+            <div style="margin-top:16px">
+              <button class="btn btn-primary" id="movie-detail-play" data-open-player="${first?.key || ''}">▶ Lejátszás</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="empty-state hidden" data-empty-search>Nincs találat a filmek között.</div>
+      </section>`;
+  }
+
+  // Fallback: mock JSON
+  const movies = await getMovies();
   return `
-    <section class="section">
-      <div class="category-filter-wrapper">
-        <div class="category-filter-bar">${groupBtns}</div>
+    <section class="content-grid" data-search-scope="movies">
+      <div class="section-head"><div class="headline">Filmek</div><span class="pill">Prémium VOD</span></div>
+      <div class="rail" data-filter-list>
+        ${movies.map(m => renderPosterCard(m.key, m.title, m.meta, styleMap[m.key] || '')).join('')}
       </div>
-      <div id="vod-movies-list">${renderMoviePage(movies, 0)}</div>
-    </section>
-  `;
+      <div class="empty-state hidden" data-empty-search>Nincs találat a filmek között.</div>
+    </section>`;
 }

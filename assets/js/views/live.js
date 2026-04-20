@@ -5,21 +5,33 @@
  * FEAT: intelligens zapping bar – kedvencek ⭐ + legutóbb nézett 🕐 + fallback
  */
 
-import { isFavorite }           from '../store/actions.js';
-import { getHistory }           from '../store/history.js';
+import { getLiveData }                        from '../services/api.js';
+import { getImportedPlaylist }                from '../services/playlist-import.js';
+import { isFavorite, getFavoritesByType }     from '../store/actions.js';
+import { getWatchHistory }                    from '../store/selectors.js';
 
-const PAGE_SIZE    = 30;
-let   _allChannels = [];     // modul-szintű cache
+const PAGE_SIZE    = 200;
+const ZAPPING_SIZE = 8;
 
-/* ── Adathozzáférés ───────────────────────────────────────────────── */
-export function setAllChannels(channels) { _allChannels = channels; }
-export function getAllLiveChannels()      { return _allChannels; }
+let _allLiveChannels = [];
 
-/* ── Csatorna-gomb HTML ───────────────────────────────────────────── */
-function renderChannelButton(c, isActive = false) {
+export function getAllLiveChannels() {
+  return _allLiveChannels;
+}
+
+export function renderLiveLoadingView() {
+  return `<section class="content-grid"><div class="status-banner"><strong>Betöltés...</strong> készül a csatornalista.</div></section>`;
+}
+
+function renderChannelLogo(ch) {
+  if (!ch.logo) return '';
+  return `<img src="${ch.logo}" alt="" class="channel-logo" loading="lazy" onerror="this.style.display='none'" />`;
+}
+
+function renderChannelButton(c, active = false) {
   const fav = isFavorite(c.key);
   return `<button
-    class="channel-item${isActive ? ' active' : ''}"
+    class="channel-item${active ? ' active' : ''}"
     data-open-player="${c.key}"
     data-channel-key="${c.key}"
     data-channel-stream-id="${c.streamId || ''}"
@@ -27,121 +39,268 @@ function renderChannelButton(c, isActive = false) {
     data-channel-group="${(c.group || 'Egyéb').replace(/"/g, '&quot;')}"
     data-channel-status="${(c.status || 'Élő').replace(/"/g, '&quot;')}"
     data-channel-logo="${(c.logo || '').replace(/"/g, '&quot;')}">
-    ${c.logo ? `<img src="${c.logo}" alt="" class="channel-logo" loading="lazy" onerror="this.style.display='none'"/>` : ''}
-    ${c.title}
+    ${renderChannelLogo(c)}${c.title}
     <span class="sub">${c.status || c.group || 'Élő'}</span>
-    <button class="fav-heart${fav ? ' fav-heart--active' : ''}" data-fav-toggle="${c.key}"
+    <button
+      class="fav-heart${fav ? ' fav-heart--active' : ''}"
+      data-fav-toggle="${c.key}"
       title="${fav ? 'Eltávolítás a kedvencekből' : 'Hozzáadás a kedvencekhez'}"
-      aria-label="${fav ? 'Eltávolítás a kedvencekből' : 'Hozzáadás a kedvencekhez'}"
-      aria-pressed="${fav}">${fav ? '♥' : '♡'}</button>
+      aria-label="${fav ? 'Eltávolítás' : 'Hozzáadás'}"
+      aria-pressed="${fav}"
+      onclick="event.stopPropagation()">${fav ? '♥' : '♡'}</button>
   </button>`;
 }
 
-/* ── Pagination helper ────────────────────────────────────────────── */
-function renderPaginationBar(current, total, itemCount, type) {
-  if (total <= 1) return `<div class="pagination-info">Összes csatorna: ${itemCount} db</div>`;
-  const pages = [];
-  for (let i = 0; i < total; i++) {
-    if (i === 0 || i === total - 1 || Math.abs(i - current) <= 2) {
-      pages.push(i);
-    } else if (pages[pages.length - 1] !== '...') {
-      pages.push('...');
-    }
-  }
-  return `<div class="pagination-bar" data-pagination-type="${type}" data-total="${itemCount}">
-    <button class="pag-btn pag-prev" data-pag-offset="${(current - 1) * PAGE_SIZE}" ${current === 0 ? 'disabled' : ''}>&lsaquo; Előző</button>
-    <div class="pag-pages">${pages.map(p => p === '...'
-      ? `<span class="pag-ellipsis">…</span>`
-      : `<button class="pag-btn pag-num${p === current ? ' active' : ''}" data-pag-offset="${p * PAGE_SIZE}">${p + 1}</button>`
-    ).join('')}</div>
-    <button class="pag-btn pag-next" data-pag-offset="${(current + 1) * PAGE_SIZE}" ${current === total - 1 ? 'disabled' : ''}>Következő &rsaquo;</button>
-  </div>`;
-}
-
-/* ── Oldal renderelése ────────────────────────────────────────────── */
 export function renderChannelPage(channels, offset = 0) {
-  const page        = channels.slice(offset, offset + PAGE_SIZE);
-  const totalPages  = Math.ceil(channels.length / PAGE_SIZE);
-  const currentPage = Math.floor(offset / PAGE_SIZE);
+  const page      = channels.slice(offset, offset + PAGE_SIZE);
+  const hasMore   = offset + PAGE_SIZE < channels.length;
+  const remaining = channels.length - offset - PAGE_SIZE;
   return `
     <div class="channel-grid">
       ${page.map((c, i) => renderChannelButton(c, offset === 0 && i === 0)).join('')}
     </div>
-    ${renderPaginationBar(currentPage, totalPages, channels.length, 'live')}
+    ${hasMore
+      ? `<button class="btn btn-secondary load-more-btn" data-load-offset="${offset + PAGE_SIZE}" style="width:100%;margin-top:8px">⬇ Következő ${Math.min(remaining, PAGE_SIZE)} csatorna (${offset + PAGE_SIZE}/${channels.length})</button>`
+      : `<div class="muted" style="padding:12px 0;font-size:.85rem;text-align:center">Összes csatorna megjelenítve (${channels.length} db)</div>`
+    }
   `;
 }
 
-/* ── Zapping-bar ──────────────────────────────────────────────────── */
-function buildZapList(all) {
-  const history = getHistory();
-  const favKeys = all.filter(c => isFavorite(c.key)).map(c => c.key);
-  const recKeys = history.filter(h => h.type === 'live').map(h => h.key);
+/**
+ * Intelligens zapping bar összeállítása:
+ * 1. Kedvenc élő csatornák (⭐) – legelőre
+ * 2. Legutóbb nézett élő csatornák (🕐) – amik még nem kedvencek
+ * 3. Fallback: lista eleje – ha nincs elég history/kedvenc
+ */
+function getZappingChannels(allChannels) {
+  const resultKeys = new Set();
+  const result     = [];
 
-  // Kedvencek először, majd legutóbb nézett (ha nincs kedvenc)
-  const candidates = favKeys.length
-    ? favKeys
-    : recKeys.length
-      ? recKeys
-      : all.slice(0, 8).map(c => c.key);
+  // 1. Kedvencek
+  const favs = getFavoritesByType('live');
+  for (const fav of favs) {
+    if (result.length >= ZAPPING_SIZE) break;
+    const ch = allChannels.find(c => c.key === fav.key);
+    if (ch && !resultKeys.has(ch.key)) {
+      result.push({ ...ch, _zapBadge: '⭐', _zapTitle: 'Kedvenc' });
+      resultKeys.add(ch.key);
+    }
+  }
 
-  // Visszaadjuk az első 8 egyedi csatornát
-  const seen = new Set();
-  return candidates
-    .filter(k => { if (seen.has(k)) return false; seen.add(k); return true; })
-    .slice(0, 8)
-    .map(k => all.find(c => c.key === k))
-    .filter(Boolean);
+  // 2. Legutóbb nézett
+  const history = getWatchHistory().filter(h => h.type === 'live');
+  for (const h of history) {
+    if (result.length >= ZAPPING_SIZE) break;
+    const ch = allChannels.find(c => c.key === h.key);
+    if (ch && !resultKeys.has(ch.key)) {
+      result.push({ ...ch, _zapBadge: '🕐', _zapTitle: 'Nemrég nézett' });
+      resultKeys.add(ch.key);
+    }
+  }
+
+  // 3. Fallback – lista eleje
+  for (const ch of allChannels) {
+    if (result.length >= ZAPPING_SIZE) break;
+    if (!resultKeys.has(ch.key)) {
+      result.push({ ...ch, _zapBadge: null, _zapTitle: null });
+      resultKeys.add(ch.key);
+    }
+  }
+
+  return result;
 }
 
-function renderZapButton(c, isFav) {
-  const badge = isFav ? '⭐' : '🕐';
-  return `<button class="control-btn quick-zap" data-open-player="${c.key}" title="${c.title}">
-    ${c.logo ? `<img src="${c.logo}" alt="" onerror="this.style.display='none'"/>` : ''}
-    ${c.title}
-    <span class="zap-badge">${badge}</span>
-  </button>`;
-}
-
-export function renderLiveView(channels) {
-  setAllChannels(channels);
-  const zap    = buildZapList(channels);
-  const favSet = new Set(channels.filter(c => isFavorite(c.key)).map(c => c.key));
-
-  const groups = ['', ...new Set(channels.map(c => c.group).filter(Boolean))];
-  const groupBtns = groups.map(g =>
-    `<button class="filter-pill${!g ? ' active' : ''}" data-group-filter="${g}">${g || 'Összes'}</button>`
-  ).join('');
+function renderZappingBar(allChannels) {
+  const zapChannels = getZappingChannels(allChannels);
+  if (!zapChannels.length) return '';
 
   return `
-    <section class="section live-section">
+    <div class="zapping-bar">
+      ${zapChannels.map(ch => `
+        <button
+          class="control-btn quick-zap"
+          data-open-player="${ch.key}"
+          title="${ch._zapTitle ? ch._zapTitle + ': ' + ch.title : ch.title}">
+          ${renderChannelLogo(ch)}
+          ${ch.title}
+          ${ch._zapBadge ? `<span class="zap-badge" aria-label="${ch._zapTitle}">${ch._zapBadge}</span>` : ''}
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+/*export async function renderLiveView() {
+  const imported = getImportedPlaylist();
+
+  let channels, groups, isImported;
+
+if (imported) {
+  channels = imported.liveChannels || imported.channels || [];
+  groups   = imported.groups || ['Összes csatorna']; // Eredeti nevek!
+  isImported = true;
+} else {
+  const data = await getLiveData();
+  channels = data.channels || [];
+  groups   = data.groups || ['Összes csatorna']; // Eredeti nevek!
+  isImported = false;
+}
+
+  // Csatornák tisztítása
+  _allLiveChannels = channels.map(c => {
+    const cleanTitle = c.title.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}⭐★⚽]/gu, '').trim();
+    
+    // Itt a trükk: ha a csatorna eredeti csoportja az, amit az "Összes" gomb keres, ne bántsuk
+    let cleanGroup = c.group || 'Egyéb';
+    if (cleanGroup !== 'Összes csatorna') {
+        cleanGroup = cleanGroup.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}⭐★⚽]/gu, '').trim();
+    }
+
+    return {
+      key:      c.key,
+      streamId: c.streamId || '',
+      title:    cleanTitle, 
+      group:    c.group || 'Egyéb', // Visszaállítjuk eredetire, hogy működjön a szűrés!
+      status:   c.status || 'Élő',
+      logo:     c.logo   || ''
+    };
+  });
+  const first       = channels[0];
+  const pill        = isImported ? `${channels.length} élő csatorna` : 'EPG + gyors váltás';
+  const sourceLabel = isImported ? 'Saját playlist aktív' : 'Most népszerű live csatorna';
+
+  if (!channels.length) {
+    return `
+      <section class="content-grid">
+        <div class="section-head"><div class="headline">Live TV</div></div>
+        <div class="status-banner"><strong>Nincs élő csatorna.</strong> Importálj egy .m3u fájlt a sidebarban.</div>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="content-grid" data-search-scope="live">
+      <div class="section-head"><div class="headline">Live TV</div><span class="pill">${pill}</span></div>
+      ${renderZappingBar(_allLiveChannels)}
+      <div class="layout-live">
+        <div class="panel groups" id="live-groups-panel">
+          ${groups.map((g, i) => {
+    // Csak a gomb feliratát tisztítjuk meg a megjelenítéshez
+          const cleanDisplayGroup = g.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}⭐★⚽]/gu, '').trim();
+          return `<button class="group-item ${i === 0 ? 'active' : ''}" data-group-filter="${g}">${cleanDisplayGroup}</button>`;
+          }).join('')}
+    </div>
+        <div class="panel channels" id="live-channel-list">
+          ${renderChannelPage(_allLiveChannels, 0)}
+        </div>
+        <div class="detail-card details live-epg-sticky" id="live-detail-panel">
+          <div class="now-playing-chip"><span class="dot-live"></span><span>${sourceLabel}</span></div>
+          <h4 id="live-detail-title" style="margin-top:14px">${first?.title || ''}</h4>
+          <dl>
+            <div><dt>Státusz</dt><dd id="live-detail-status">${first?.status || 'Élő'}</dd></div>
+            <div><dt>Kategória</dt><dd id="live-detail-group">${first?.group || 'Egyéb'}</dd></div>
+            <div><dt>Minőség</dt><dd>${isImported ? 'HLS stream' : 'Full HD'}</dd></div>
+            <div><dt>Forrás</dt><dd>${isImported ? 'Lokális M3U import' : 'Automatikus session'}</dd></div>
+          </dl>
+          <div id="live-detail-epg">
+            <div class="epg-loading" style="color:var(--color-text-muted);font-size:.85rem;margin-top:12px">⏳ EPG betöltése...</div>
+          </div>
+          <div style="margin-top:16px">
+            <button class="btn btn-primary" id="live-detail-play" data-open-player="${first?.key || ''}">&#9654; Lejátszás</button>
+          </div>
+        </div>
+      </div>
+      <div class="empty-state hidden" data-empty-search>Nincs találat a csatornák között.</div>
+    </section>
+  `;
+}*/
+export async function renderLiveView() {
+  const imported = getImportedPlaylist();
+
+  let channels, groups, isImported;
+
+  if (imported) {
+    channels   = imported.liveChannels || imported.channels || [];
+    groups     = imported.groups       || ['Összes csatorna'];
+    isImported = true;
+  } else {
+    const data = await getLiveData();
+    channels   = data.channels || [];
+    groups     = data.groups   || ['Összes csatorna'];
+    isImported = false;
+  }
+
+  // CSATORNÁK TISZTÍTÁSA (Csak a címben!)
+  _allLiveChannels = channels.map(c => {
+    // A gomb feliratán ne legyen emoji
+    const cleanTitle = c.title.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}⭐★⚽]/gu, '').trim();
+
+    return {
+      key:      c.key,
+      streamId: c.streamId || '',
+      title:    cleanTitle, 
+      group:    c.group || 'Egyéb', // Ezt NEM tisztítjuk, mert ezen alapul a szűrés!
+      status:   c.status || 'Élő',
+      logo:     c.logo   || ''
+    };
+  });
+
+  const first       = _allLiveChannels[0];
+  const pill        = isImported ? `${_allLiveChannels.length} élő csatorna` : 'EPG + gyors váltás';
+  const sourceLabel = isImported ? 'Saját playlist aktív' : 'Most népszerű live csatorna';
+
+  if (!_allLiveChannels.length) {
+    return `
+      <section class="content-grid">
+        <div class="section-head"><div class="headline">Live TV</div></div>
+        <div class="status-banner"><strong>Nincs élő csatorna.</strong> Importálj egy .m3u fájlt a sidebarban.</div>
+      </section>
+    `;
+  }
+return `
+    <section class="content-grid" data-search-scope="live">
+      <div class="section-head">
+        <div class="headline">Live TV</div>
+        <span class="pill">${pill}</span>
+      </div>
+      
+      ${renderZappingBar(_allLiveChannels)}
+
       <div class="category-filter-wrapper">
-        <div class="category-filter-bar">${groupBtns}</div>
+        <div class="category-filter-bar" id="live-groups-panel">
+          ${groups.map((g, i) => {
+            // Csak a feliratot tisztítjuk az emojiktól
+            const cleanDisplayGroup = g.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}⭐★⚽]/gu, '').trim();
+            
+            // Az "Összes" gomb trükkje a szűréshez (ahogy korábban beszéltük)
+            const filterValue = (g === 'Összes csatorna') ? '' : g;
+
+            return `<button class="filter-pill ${i === 0 ? 'active' : ''}" data-group-filter="${filterValue}">${cleanDisplayGroup}</button>`;
+          }).join('')}
+        </div>
       </div>
 
       <div class="layout-live-full">
-
-        <!-- Bal: csatornalista -->
-        <div class="panel channels">
-          <div id="live-channel-list">${renderChannelPage(channels, 0)}</div>
+        <div class="panel channels" id="live-channel-list">
+          ${renderChannelPage(_allLiveChannels, 0)}
         </div>
-
-        <!-- Jobb: részletek -->
-        <div class="detail-card details">
-          <!-- Quick-zap sáv -->
-          <div class="controls" style="flex-wrap:wrap;margin-bottom:16px">
-            ${zap.map(c => renderZapButton(c, favSet.has(c.key))).join('')}
+        
+        <div class="detail-card details live-epg-sticky" id="live-detail-panel">
+          <div class="now-playing-chip"><span class="dot-live"></span><span>${sourceLabel}</span></div>
+          <h4 id="live-detail-title" style="margin-top:14px">${first?.title || ''}</h4>
+          <dl>
+            <div><dt>Státusz</dt><dd id="live-detail-status">${first?.status || 'Élő'}</dd></div>
+            <div><dt>Kategória</dt><dd id="live-detail-group">${first?.group || 'Egyéb'}</dd></div>
+            <div><dt>Minőség</dt><dd>${isImported ? 'HLS stream' : 'Full HD'}</dd></div>
+            <div><dt>Forrás</dt><dd>${isImported ? 'Lokális M3U import' : 'Automatikus session'}</dd></div>
+          </dl>
+          <div id="live-detail-epg">
+            <div class="epg-loading" style="color:var(--color-text-muted);font-size:.85rem;margin-top:12px">⏳ EPG betöltése...</div>
           </div>
-
-          <!-- EPG / részletek panel -->
-          <div id="live-detail-logo"></div>
-          <div id="live-detail-title"  style="font-family:Bangers,cursive;font-size:1.6rem;letter-spacing:1px;margin:8px 0 4px"></div>
-          <div id="live-detail-status" style="font-size:.82rem;color:#888;margin-bottom:10px"></div>
-          <div id="live-detail-epg"    style="font-size:.9rem;line-height:1.5"></div>
           <div style="margin-top:16px">
-            <button class="btn btn-primary" id="live-detail-play" data-open-player="" style="width:100%">&#9654; Lejátszás</button>
+            <button class="btn btn-primary" id="live-detail-play" data-open-player="${first?.key || ''}">&#9654; Lejátszás</button>
           </div>
         </div>
-
       </div>
       <div class="empty-state hidden" data-empty-search>Nincs találat a csatornák között.</div>
     </section>

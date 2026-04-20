@@ -1,46 +1,30 @@
 /**
  * card-renderers.js
  * Megosztott HTML-generáló függvények: live csatorna, film, sorozat kártyalisták.
- * Importálja: app.js, filters.js
+ * Importálja: app.js, filters.js, load-more.js
  */
 
 import { isFavorite } from '../store/actions.js';
 
-const PAGE_LIVE   = 30;
-const PAGE_VOD    = 30;
-
-/* ── Pagination helper ── */
-function renderPaginationBar(current, total, itemCount, type, pageSize) {
-  if (total <= 1) return `<div class="pagination-info">Összes elem: ${itemCount} db</div>`;
-  const pages = [];
-  for (let i = 0; i < total; i++) {
-    if (i === 0 || i === total - 1 || Math.abs(i - current) <= 2) {
-      pages.push(i);
-    } else if (pages[pages.length - 1] !== '...') {
-      pages.push('...');
-    }
-  }
-  return `<div class="pagination-bar" data-pagination-type="${type}" data-total="${itemCount}" data-page-size="${pageSize}">
-    <button class="pag-btn pag-prev" data-pag-offset="${(current - 1) * pageSize}" ${current === 0 ? 'disabled' : ''}>&lsaquo; Előző</button>
-    <div class="pag-pages">${pages.map(p => p === '...'
-      ? `<span class="pag-ellipsis">…</span>`
-      : `<button class="pag-btn pag-num${p === current ? ' active' : ''}" data-pag-offset="${p * pageSize}">${p + 1}</button>`
-    ).join('')}</div>
-    <button class="pag-btn pag-next" data-pag-offset="${(current + 1) * pageSize}" ${current === total - 1 ? 'disabled' : ''}>Következő &rsaquo;</button>
-  </div>`;
-}
+const PAGE_LIVE   = 200;
+const PAGE_VOD    = 100;
 
 /* ── Live csatorna lista ── */
-export function renderChannelListHTML(channels, offset = 0) {
-  const page        = channels.slice(offset, offset + PAGE_LIVE);
-  const totalPages  = Math.ceil(channels.length / PAGE_LIVE);
-  const currentPage = Math.floor(offset / PAGE_LIVE);
+export function renderChannelListHTML(channels) {
+  const page    = channels.slice(0, PAGE_LIVE);
+  const hasMore = channels.length > PAGE_LIVE;
+  const rem     = channels.length - PAGE_LIVE;
+
   return `<div class="channel-grid">${
     page.map(c => renderChannelItemHTML(c)).join('')
-  }</div>${renderPaginationBar(currentPage, totalPages, channels.length, 'live', PAGE_LIVE)}`;
+  }</div>${
+    hasMore
+      ? `<button class="btn btn-secondary load-more-btn" data-load-offset="${PAGE_LIVE}" style="width:100%;margin-top:8px">⬇ Következő ${Math.min(rem, PAGE_LIVE)} csatorna (${PAGE_LIVE}/${channels.length})</button>`
+      : `<div class="muted" style="padding:12px 0;font-size:.85rem;text-align:center">Összes csatorna megjelenítve (${channels.length} db)</div>`
+  }`;
 }
 
-/* Egyetlen channel-item gomb HTML-je */
+/* Egyetlen channel-item gomb HTML-je (load-more-nál is használjuk) */
 export function renderChannelItemHTML(c) {
   return `<button class="channel-item"
     data-open-player="${c.key}"
@@ -56,13 +40,17 @@ export function renderChannelItemHTML(c) {
 }
 
 /* ── Film kártyalista ── */
-export function renderMovieListHTML(items, offset = 0) {
-  const page        = items.slice(offset, offset + PAGE_VOD);
-  const totalPages  = Math.ceil(items.length / PAGE_VOD);
-  const currentPage = Math.floor(offset / PAGE_VOD);
-  return `<div class="channel-grid" id="vod-movies-rail">${
+export function renderMovieListHTML(items) {
+  const page    = items.slice(0, PAGE_VOD);
+  const hasMore = items.length > PAGE_VOD;
+  const rem     = items.length - PAGE_VOD;
+
+  return `<div class="rail" id="vod-movies-rail">${
     page.map(item => renderMovieCardHTML(item)).join('')
-  }</div>${renderPaginationBar(currentPage, totalPages, items.length, 'movies', PAGE_VOD)}`;
+  }${hasMore
+    ? `<button class="btn btn-secondary load-more-movies-btn" data-movies-offset="${PAGE_VOD}" style="grid-column:1/-1;margin-top:8px">⬇ Következő ${Math.min(rem, PAGE_VOD)} film (${PAGE_VOD}/${items.length})</button>`
+    : `<div class="muted" style="grid-column:1/-1;padding:12px 0;font-size:.85rem;text-align:center">Összes film megjelenítve (${items.length} db)</div>`
+  }</div>`;
 }
 
 /* Egyetlen film-kártya HTML-je */
@@ -71,6 +59,7 @@ export function renderMovieCardHTML(item) {
     ? `background:url('${item.logo}') center/cover no-repeat`
     : 'background:linear-gradient(145deg,#1fd6e8,#ff5b63 55%,#1a1a1a)';
   const fav = isFavorite(item.key);
+
   return `<article class="card"
     data-movie-key="${item.key}"
     data-movie-stream-id="${item.streamId || ''}"
@@ -89,13 +78,17 @@ export function renderMovieCardHTML(item) {
 }
 
 /* ── Sorozat kártyalista ── */
-export function renderSeriesListHTML(items, offset = 0) {
-  const page        = items.slice(offset, offset + PAGE_VOD);
-  const totalPages  = Math.ceil(items.length / PAGE_VOD);
-  const currentPage = Math.floor(offset / PAGE_VOD);
-  return `<div class="channel-grid" id="vod-series-rail">${
+export function renderSeriesListHTML(items) {
+  const page    = items.slice(0, PAGE_VOD);
+  const hasMore = items.length > PAGE_VOD;
+  const rem     = items.length - PAGE_VOD;
+
+  return `<div class="rail" id="vod-series-rail">${
     page.map(item => renderSeriesCardHTML(item)).join('')
-  }</div>${renderPaginationBar(currentPage, totalPages, items.length, 'series', PAGE_VOD)}`;
+  }${hasMore
+    ? `<button class="btn btn-secondary load-more-series-btn" data-series-offset="${PAGE_VOD}" style="grid-column:1/-1;margin-top:8px">⬇ Következő ${Math.min(rem, PAGE_VOD)} sorozat (${PAGE_VOD}/${items.length})</button>`
+    : `<div class="muted" style="grid-column:1/-1;padding:12px 0;font-size:.85rem;text-align:center">Összes sorozat megjelenítve (${items.length} db)</div>`
+  }</div>`;
 }
 
 /* Egyetlen sorozat-kártya HTML-je */
@@ -104,6 +97,7 @@ export function renderSeriesCardHTML(item) {
     ? `background:url('${item.logo}') center/cover no-repeat`
     : 'background:linear-gradient(145deg,#f6c800,#ff5b63 55%,#1a1a1a)';
   const fav = isFavorite(item.key);
+
   return `<article class="card"
     data-open-series="${item.seriesId}"
     data-series-key="${item.key}"

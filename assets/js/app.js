@@ -31,8 +31,7 @@ import {
 }                                                  from './services/playlist-import.js';
 
 import { renderHeartBtn, bindFavoriteButtons, bindFavMovieCards, bindFavSeriesCards } from './components/favorites-bindings.js';
-import { bindGroupFilter, bindMoviesFilter, bindSeriesFilter,
-         bindPagination, bindMoviesPagination, bindSeriesPagination } from './components/filters.js';
+import { bindGroupFilter, bindMoviesFilter, bindSeriesFilter, bindLoadMore, bindMoviesLoadMore, bindSeriesLoadMore } from './components/filters.js';
 import { mountPlayer, loadEpgIntoPanel, triggerFirstChannelEpg, bindPlayerVodMeta, bindPlayerLiveEpg } from './components/player-bindings.js';
 import { openEpisodePanel }                        from './components/episode-panel.js';
 
@@ -96,9 +95,9 @@ async function renderApp() {
   bindRouteEvents();
   bindLiveInteractions();
 
-  bindPagination(bindLiveInteractions, bindRouteEvents, bindFavoriteButtons);
-  bindMoviesPagination(bindMovieCards, bindRouteEvents, bindFavoriteButtons);
-  bindSeriesPagination(bindSeriesDetailPanel, bindSeriesCards, bindRouteEvents, bindFavoriteButtons);
+  bindLoadMore(bindLiveInteractions, bindRouteEvents, bindFavoriteButtons);
+  bindMoviesLoadMore(bindMovieCards, bindRouteEvents, bindFavoriteButtons);
+  bindSeriesLoadMore(bindSeriesDetailPanel, bindSeriesCards, bindRouteEvents, bindFavoriteButtons);
   bindGroupFilter(bindLiveInteractions, bindRouteEvents, bindFavoriteButtons);
   bindMoviesFilter(bindMovieCards, bindRouteEvents, bindFavoriteButtons);
   bindSeriesFilter(bindSeriesDetailPanel, bindSeriesCards, bindRouteEvents, bindFavoriteButtons);
@@ -251,17 +250,25 @@ function bindMovieCards() {
     }, 350);
   };
 
+  // Hover / focus → csak panel frissítés, NEM navigál
   document.querySelectorAll('[data-movie-key]:not(.fav-card)').forEach(card => {
     card.addEventListener('mouseenter', () => updatePanel(card));
     card.addEventListener('focus',      () => updatePanel(card));
+    // Kattintás → panel aktív, de NEM navigál (a Lejátszás gomb navigál)
     card.addEventListener('click', () => updatePanel(card));
-    card.addEventListener('keydown', e => { if (e.key === 'Enter') updatePanel(card); });
+    card.addEventListener('keydown', e => {
+      if (e.key === 'Enter') updatePanel(card);
+    });
   });
 
+  // A Lejátszás gomb navigál
   if (playBtn) {
     playBtn.addEventListener('click', () => {
       const key = playBtn.dataset.openPlayer;
-      if (key) { setCurrentPlayerItem(key); navigateTo('player', { id: key }); }
+      if (key) {
+        setCurrentPlayerItem(key);
+        navigateTo('player', { id: key });
+      }
     });
   }
 }

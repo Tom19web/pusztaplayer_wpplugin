@@ -1,7 +1,7 @@
 /**
  * PusztaPlay v7 — Playlist Import Service
  * FEAT: Xtream Codes player_api.php JSON API (primár)
- *       Lokális .m3u fájl import (fallback)
+ * Lokális .m3u fájl import (fallback)
  */
 
 import { parseM3u, savePlaylistToCache, loadPlaylistFromCache, clearPlaylistCache } from './m3u-parser.js';
@@ -22,15 +22,19 @@ export { loadXtreamCredentials, clearXtreamCredentials };
 export async function xtreamLogin(username, password) {
   const playlist = await xtreamFullLogin(username, password);
   currentPlaylist = playlist;
-  savePlaylistToCache(playlist);
+  
+  // Az IndexedDB mentés aszinkron, megvárjuk
+  await savePlaylistToCache(playlist);
+  
   saveXtreamCredentials(username, password);
   emit('playlistLoaded', playlist);
   return playlist;
 }
 
 // ── Cache inicializálás induláskor ───────────────────────────
-export function initPlaylistFromCache() {
-  const cached = loadPlaylistFromCache();
+// Ez a függvény aszinkron lett az IndexedDB miatt
+export async function initPlaylistFromCache() {
+  const cached = await loadPlaylistFromCache();
   if (cached) {
     currentPlaylist = cached;
     emit('playlistLoaded', cached);
@@ -46,7 +50,10 @@ export function importPlaylistFile(file) {
       try {
         const playlist = await parseM3u(e.target.result);
         currentPlaylist = playlist;
-        savePlaylistToCache(playlist);
+        
+        // Itt is megvárjuk az aszinkron mentést
+        await savePlaylistToCache(playlist);
+        
         emit('playlistLoaded', playlist);
         resolve(playlist);
       } catch (error) {
@@ -60,9 +67,10 @@ export function importPlaylistFile(file) {
 
 export function getImportedPlaylist() { return currentPlaylist; }
 
-export function clearImportedPlaylist() {
+// Ez a függvény is aszinkron lett, hogy biztosan törölje az IndexedDB-t
+export async function clearImportedPlaylist() {
   currentPlaylist = null;
-  clearPlaylistCache();
+  await clearPlaylistCache();
   clearXtreamCredentials();
   emit('playlistCleared', null);
 }
